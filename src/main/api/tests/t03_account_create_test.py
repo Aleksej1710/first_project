@@ -1,22 +1,18 @@
 import pytest
+from sqlalchemy.orm import Session
+from src.main.api.classes.api_manager import ApiManager
+from src.main.api.db.crud.account_crud import AccountCrudDb as Account
 from src.main.api.models.create_user_request import CreateUserRequest
-from src.main.api.requests.create_user_requester import CreateUserRequester
-from src.main.api.specs.request_specs import RequestSpecs
-from src.main.api.specs.response_specs import ResponseSpecs
-from src.main.api.requests.create_account_requester import CreateAccountRequester
+
+
 @pytest.mark.api
 class TestCreateAccount:
-    def test_create_account(self):       
-        create_user_request = CreateUserRequest(username="UsrOQGs9X2E", password="Pas!sw0rd", role="ROLE_USER")
-
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
-
-        response = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrOQGs9X2E", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
+    def test_create_account(self, db_session: Session, api_manager: ApiManager, create_user_request: CreateUserRequest):
+        response = api_manager.user_steps.create_account(create_user_request)
 
         assert response.balance == 0
+
+        account_from_db =Account.get_account_by_id(db_session, response.id)
+        assert account_from_db is not None, 'Аккаунт не создан, id аккаунта нет в БД'
+        assert account_from_db.balance is not None, 'Поле баланса для созданного аккаунта отсутствует в БД'
+        assert account_from_db.balance == 0, 'Баланс аккаунта не равен 0'

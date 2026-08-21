@@ -1,22 +1,28 @@
 import pytest
-from src.main.api.requests.create_user_requester import CreateUserRequester
+from sqlalchemy.orm import Session
+from src.main.api.classes.api_manager import ApiManager
+from src.main.api.db.crud.user_crud import UserCrudDb as User
+from src.main.api.generators.model_generator import RandomModelGenerator
 from src.main.api.models.create_user_request import CreateUserRequest
-from src.main.api.specs.request_specs import RequestSpecs
-from src.main.api.specs.response_specs import ResponseSpecs
+
 
 
 @pytest.mark.api
 class TestCreateUser():
-    def test_create_user_valid(self):
-        create_user_request = CreateUserRequest(username="UsrhB0VKw4p", password="Pas!sw0rd", role="ROLE_USER")
-
-        response = CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok()
-        ).post(create_user_request)
+    @pytest.mark.parametrize(
+        "create_user_request",
+        [RandomModelGenerator.generate(CreateUserRequest)
+        ]
+    )
+    def test_create_user_valid(self, api_manager: ApiManager, create_user_request: CreateUserRequest, db_session: Session):
+        response = api_manager.admin_steps.create_user(create_user_request)
 
         assert create_user_request.username == response.username
         assert create_user_request.role == response.role
+
+        user_from_db = User.get_user_by_username(db_session, create_user_request.username)
+        assert user_from_db is not None
+        assert user_from_db.username == create_user_request.username, 'Созданного пользователя нет в БД'
 
 
     @pytest.mark.parametrize(
@@ -33,12 +39,11 @@ class TestCreateUser():
             ("Maxx6", "PAS!SWRRD"),
         ],
     )
-    def test_create_user_invalid(self, username, password):
+    def test_create_user_invalid(self, db_session: Session, username:str, password:str, api_manager: ApiManager):
         create_user_request = CreateUserRequest(username=username, password=password, role="ROLE_USER")
+        api_manager.admin_steps.create_invalid_user(create_user_request)
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_bad(),
-        ).post(create_user_request)
+        user_from_db = User.get_user_by_username(db_session, create_user_request.username)
 
+        assert user_from_db is None, 'Пользователь создан, ошибка'
 

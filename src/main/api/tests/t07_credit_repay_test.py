@@ -1,76 +1,62 @@
-from src.main.api.requests.repay_credit_requester import RepayCreditRequester
-from src.main.api.specs.request_specs import RequestSpecs
-from src.main.api.specs.response_specs import ResponseSpecs
-from src.main.api.requests.create_user_requester import CreateUserRequester
-from src.main.api.requests.create_account_requester import CreateAccountRequester
+import pytest
+from sqlalchemy.orm import Session
+from src.main.api.classes.api_manager import ApiManager
 from src.main.api.models.create_user_request import CreateUserRequest
-from src.main.api.models.credit_account_request import CreditAccountRequest
-from src.main.api.requests.credit_account_requester import CreditAccountRequester
-from src.main.api.models.repay_credit_request import RepayCreditRequest
-from src.main.api.models.error_response import ErrorResponse
+from src.main.api.models.credit_account_response import CreditAccountResponse
+from src.main.api.db.crud.credit_crud import CreditCrudDb as Credit
+from src.main.api.db.crud.account_crud import AccountCrudDb as Account
 
+
+@pytest.mark.api
 class TestRepayCredit:
-    def test_repay_credit_valid(self):
-        create_user_request = CreateUserRequest(username="Usrz6AP8UH7", password="Pas!sw0rd", role="ROLE_CREDIT_SECRET")
+    def test_repay_credit_valid(
+            self, db_session: Session,
+            api_manager: ApiManager,
+            user_repay_credit: tuple[CreateUserRequest, CreditAccountResponse]):
+        create_user_request, credit_account_response = user_repay_credit
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
+        account_from_db = Account.get_account_by_id(db_session, credit_account_response.id)
+        assert account_from_db is not None, 'Счёт из фикстуры не найден в БД'
+        assert account_from_db.balance == credit_account_response.balance, 'Фикстура не выдала кредит на счёт'
 
-        create_account_response = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="Usrz6AP8UH7", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
+        credit_from_db = Credit.get_credit_by_id(db_session, credit_account_response.creditId)
+        assert credit_from_db is not None, 'Кредит из фикстуры не найден в БД'
+        assert credit_from_db.balance == -credit_account_response.amount, 'Фикстура не записала долг по кредиту'
 
-        credit_account_request = CreditAccountRequest(accountId=create_account_response.id, amount=5000, termMonths=12)
+        amount = 5000
+        response = api_manager.user_steps.repay_credit_account(create_user_request, credit_account_response, amount)
 
-        credit_account_response = CreditAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="Usrz6AP8UH7", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post(credit_account_request)
+        assert response.amountDeposited == amount, 'Сервис принял в погашение не ту сумму'
+        assert response.creditId == credit_account_response.creditId, 'Погашение отнесено к другому кредиту'
 
-        repay_credit_request = RepayCreditRequest(creditId=credit_account_response.creditId, accountId=credit_account_response.id, amount=5000)
+        db_session.expire_all()
 
-        repay_credit_response = RepayCreditRequester(
-            request_spec=RequestSpecs.authentication_headers(username="Usrz6AP8UH7", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(repay_credit_request)
+        assert credit_from_db is not None, 'Кредит пропал из БД после погашения'
+        assert credit_from_db.balance == 0, 'Долг не закрыт после полного погашения'
+        assert account_from_db.balance == 0, 'Деньги не списаны со счёта при погашении'
 
-        assert repay_credit_response.amountDeposited == credit_account_response.amount
+    def test_repay_credit_invalid(
+            self, db_session: Session,
+            api_manager: ApiManager,
+            user_repay_credit: tuple[CreateUserRequest, CreditAccountResponse]):
+        create_user_request, credit_account_response = user_repay_credit
 
+        account_from_db = Account.get_account_by_id(db_session, credit_account_response.id)
+        assert account_from_db is not None, 'Счёт из фикстуры не найден в БД'
+        assert account_from_db.balance == credit_account_response.balance, 'Фикстура не выдала кредит на счёт'
 
-    def test_repay_credit_invalid(self):
-        create_user_request = CreateUserRequest(
-            username="UsryDE505KQ", password="Pas!sw0rd", role="ROLE_CREDIT_SECRET"
+        credit_from_db = Credit.get_credit_by_id(db_session, credit_account_response.creditId)
+        assert credit_from_db is not None, 'Кредит из фикстуры не найден в БД'
+        assert credit_from_db.balance == -credit_account_response.amount, 'Фикстура не записала долг по кредиту'
+
+        amount = 0
+        response = api_manager.user_steps.repay_credit_account_invalid(
+            create_user_request, credit_account_response, amount
         )
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
+        assert response.error == "Amount must be greater than 0", 'Сервис не отклонил недопустимую сумму'
+        db_session.expire_all()
 
-        create_account_response = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsryDE505KQ", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
-
-        credit_account_request = CreditAccountRequest(
-            accountId=create_account_response.id, amount=5000, termMonths=12
-        )
-
-        credit_account_response = CreditAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsryDE505KQ", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post(credit_account_request)
-
-        repay_credit_request = RepayCreditRequest(
-            creditId=credit_account_response.creditId, accountId=credit_account_response.id, amount=0,
-        )
-
-        error_response = RepayCreditRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsryDE505KQ", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_bad(),
-        ).post_expecting_error(repay_credit_request)
-
-        assert error_response.error == "Amount must be greater than 0"
+        assert credit_from_db is not None, 'Кредит пропал из БД после отклонённого погашения'
+        assert credit_from_db.balance == -credit_account_response.amount, 'Долг изменился, хотя погашение отклонено'
+        assert account_from_db.balance == credit_account_response.balance, 'Баланс изменился, хотя погашение отклонено'
