@@ -13,6 +13,10 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
+# Отчёты Allure — генерируются прогоном, в репозиторий не нужны
+allure-results/
+allure-report/
+
 # Настройки IDE
 .idea/
 .vscode/

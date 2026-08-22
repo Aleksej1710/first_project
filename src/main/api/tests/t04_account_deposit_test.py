@@ -1,59 +1,55 @@
-from src.main.api.models.deposit_account_request import DepositAccountRequest
-from src.main.api.specs.request_specs import RequestSpecs
-from src.main.api.specs.response_specs import ResponseSpecs
-from src.main.api.requests.create_user_requester import CreateUserRequester
-from src.main.api.models.create_user_request import CreateUserRequest
-from src.main.api.requests.create_account_requester import CreateAccountRequester
-from src.main.api.requests.deposit_account_requester import DepositAccountRequester
+import pytest
+from sqlalchemy.orm import Session
+from src.main.api.classes.api_manager import ApiManager
+from src.main.api.db.crud.account_crud import AccountCrudDb as Account
+from src.main.api.db.crud.transaction_crud import TransactionCrudDb as Transaction
+from src.main.api.generators.amount_range import DEPOSIT_AMOUNT_RANGE
+from src.main.api.fixtures.fixture_models import UserWithAccount
+
+
+@pytest.mark.api
 class TestDepositAccount:
-    def test_deposit_account_valid(self):
-        create_user_request = CreateUserRequest(
-            username="Usr1cLfl763", password="Pas!sw0rd", role="ROLE_USER")
+    def test_deposit_account_valid(
+            self, db_session: Session,
+            api_manager: ApiManager,
+            user_with_account: UserWithAccount):
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
+        account_from_db = Account.get_account_by_id(db_session, user_with_account.account.id)
+        assert account_from_db.balance == 0, 'Новый счёт создан не с нулевым балансом'
 
-        response = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="Usr1cLfl763", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
+        amount = DEPOSIT_AMOUNT_RANGE.random_value()
+        api_manager.user_steps.deposit_account(user_with_account.user, user_with_account.account, amount)
+        db_session.expire_all()
 
-        assert response.balance == 0
+        assert account_from_db.balance == amount, 'Депозит не зачислен на счёт'
 
-        deposit_account_request = DepositAccountRequest(accountId=response.id, amount=5000)
-
-        deposit_account_response = DepositAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="Usr1cLfl763", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(deposit_account_request)
-
-        assert deposit_account_response.balance == 5000
-        assert deposit_account_response.id == response.id
-
-    def test_deposit_account_invalid(self):
-        create_user_request = CreateUserRequest(
-            username="UsrAuMxGSvp", password="Pas!sw0rd", role="ROLE_USER"
+        transaction_from_db = Transaction.get_last_transaction_by_account_id(
+            db_session, user_with_account.account.id
         )
+        assert transaction_from_db is not None, 'Транзакция депозита не записана в БД'
+        assert transaction_from_db.transaction_type == "deposit", 'Тип транзакции в БД не deposit'
+        assert transaction_from_db.to_account_id == user_with_account.account.id, 'Депозит зачислен не на тот счёт'
+        assert transaction_from_db.from_account_id is None, 'У депозита не должно быть счёта-источника'
+        assert transaction_from_db.amount == amount, 'Сумма транзакции не совпадает с суммой депозита'
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
+    def test_deposit_account_invalid(
+            self, db_session: Session,
+            api_manager: ApiManager,
+            user_with_account: UserWithAccount):
 
-        response = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrAuMxGSvp", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
+        account_from_db = Account.get_account_by_id(db_session, user_with_account.account.id)
+        assert account_from_db.balance == 0, 'Новый счёт создан не с нулевым балансом'
 
-        assert response.balance == 0
+        amount = 999
+        response = api_manager.user_steps.deposit_account_invalid(
+            user_with_account.user,
+            user_with_account.account,
+            amount
+        )
+        assert response.error == "Amount must be between 1000 and 9000", 'Сервис не отклонил недопустимую сумму'
+        db_session.expire_all()
 
-        deposit_account_request = DepositAccountRequest(accountId=response.id, amount=999)
+        assert account_from_db.balance == 0, 'Баланс изменился, хотя депозит отклонён'
 
-        error_response = DepositAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrAuMxGSvp", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_bad(),
-        ).post_expecting_error(deposit_account_request)
-
-        assert error_response.error == "Amount must be between 1000 and 9000"
+        transaction_from_db = Transaction.get_last_transaction_by_account_id(db_session, user_with_account.account.id)
+        assert transaction_from_db is None, 'Транзакция записана, хотя депозит отклонён'

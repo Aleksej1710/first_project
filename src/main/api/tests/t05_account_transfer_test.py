@@ -1,108 +1,78 @@
-from src.main.api.models.transfer_account_request import TransferAccountRequest
-from src.main.api.models.deposit_account_request import DepositAccountRequest
-from src.main.api.models.deposit_account_response import DepositAccountResponse
-from src.main.api.requests.transfer_account_requester import TransferAccountRequester
-from src.main.api.specs.request_specs import RequestSpecs
-from src.main.api.specs.response_specs import ResponseSpecs
-from src.main.api.requests.create_user_requester import CreateUserRequester
-from src.main.api.models.create_user_request import CreateUserRequest
-from src.main.api.requests.create_account_requester import CreateAccountRequester
-from src.main.api.requests.deposit_account_requester import DepositAccountRequester
-from src.main.api.models.error_response import ErrorResponse
+import pytest
+from sqlalchemy.orm import Session
+from src.main.api.classes.api_manager import ApiManager
+from src.main.api.db.crud.account_crud import AccountCrudDb as Account
+from src.main.api.db.crud.transaction_crud import TransactionCrudDb as Transaction
+from src.main.api.generators.amount_range import TRANSFER_AMOUNT_RANGE
+from src.main.api.fixtures.fixture_models import UserWithTwoAccounts
 
+
+@pytest.mark.api
 class TestTransferAccount:
-    def test_transfer_account_valid(self):
-        create_user_request = CreateUserRequest(
-            username="UsrndCYy39n", password="Pas!sw0rd", role="ROLE_USER")
+    def test_transfer_account_valid(
+            self, db_session: Session,
+            api_manager: ApiManager,
+            transfer_accounts: UserWithTwoAccounts):
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
-
-
-        """создание счета списания"""
-
-        response_from = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrndCYy39n", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
-
-        assert response_from.balance == 0
-
-        deposit_account_request = DepositAccountRequest(accountId=response_from.id, amount=5000)
-
-        deposit_account_response = DepositAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrndCYy39n", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(deposit_account_request)
-
-        """создание счета зачисления"""
-
-        response_to = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrndCYy39n", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
-
-        assert response_to.balance == 0
-
-        transfer_account_request = TransferAccountRequest(
-            fromAccountId=response_from.id, toAccountId=response_to.id, amount=3000
+        to_account_from_db = Account.get_account_by_id(db_session, transfer_accounts.to_account.id)
+        assert to_account_from_db.balance == 0, 'Счёт получателя создан не с нулевым балансом'
+        from_account_from_db = Account.get_account_by_id(db_session, transfer_accounts.from_account.id)
+        assert from_account_from_db.balance == transfer_accounts.deposit_amount, (
+            'Фикстура не положила деньги отправителю'
         )
 
-        transfer_account_response = TransferAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrndCYy39n", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(transfer_account_request)
+        transfer_amount = TRANSFER_AMOUNT_RANGE.capped_at(transfer_accounts.deposit_amount).random_value()
+        api_manager.user_steps.transfer_account(
+            transfer_accounts.user, transfer_accounts.from_account, transfer_accounts.to_account, transfer_amount
+        )
+        db_session.expire_all()
 
-        assert  transfer_account_response.fromAccountIdBalance == deposit_account_response.balance - transfer_account_request.amount
-
-
-
-
-    def test_transfer_account_invalid(self):
-        create_user_request = CreateUserRequest(
-            username="UsrlTplp4ba", password="Pas!sw0rd", role="ROLE_USER"
+        assert to_account_from_db.balance == transfer_amount, 'Деньги не зачислены получателю'
+        assert from_account_from_db.balance == transfer_accounts.deposit_amount - transfer_amount, (
+            'Деньги не списаны с отправителя'
         )
 
-        CreateUserRequester(
-            request_spec=RequestSpecs.admin_headers(),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(create_user_request)
-
-        """создание счета списания"""
-
-        response_from = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrlTplp4ba", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
-
-        assert response_from.balance == 0
-
-        deposit_account_request = DepositAccountRequest(accountId=response_from.id, amount=5000)
-
-        deposit_account_response = DepositAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrlTplp4ba", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_ok(),
-        ).post(deposit_account_request)
-
-        """создание счета зачисления"""
-
-        response_to = CreateAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrlTplp4ba", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_created(),
-        ).post()
-
-        assert response_to.balance == 0
-
-        transfer_account_request = TransferAccountRequest.model_construct(
-            fromAccountId=response_from.id, toAccountId=response_to.id, amount=None
+        transaction_from_db = Transaction.get_last_transaction_by_account_id(
+            db_session, transfer_accounts.from_account.id
         )
+        assert transaction_from_db is not None, 'Транзакция перевода не записана в БД'
+        assert transaction_from_db.transaction_type == "transfer", 'Тип транзакции в БД не transfer'
+        assert transaction_from_db.from_account_id == transfer_accounts.from_account.id, (
+            'В транзакции неверный счёт-источник'
+        )
+        assert transaction_from_db.to_account_id == transfer_accounts.to_account.id, (
+            'В транзакции неверный счёт-получатель'
+        )
+        assert transaction_from_db.amount == transfer_amount, 'Сумма транзакции не совпадает с переводом'
 
-        error_response = TransferAccountRequester(
-            request_spec=RequestSpecs.authentication_headers(username="UsrlTplp4ba", password="Pas!sw0rd"),
-            response_spec=ResponseSpecs.request_bad(),
-        ).post_expecting_error(transfer_account_request)
+    def test_transfer_account_invalid(
+            self, db_session: Session,
+            api_manager: ApiManager,
+            transfer_accounts: UserWithTwoAccounts):
 
-        assert error_response.error == "Amount is required"
-        
+        from_account_from_db = Account.get_account_by_id(db_session, transfer_accounts.from_account.id)
+        assert from_account_from_db.balance == transfer_accounts.deposit_amount, (
+            'Фикстура не положила деньги отправителю'
+        )
+        to_account_from_db = Account.get_account_by_id(db_session, transfer_accounts.to_account.id)
+        assert to_account_from_db.balance == 0, 'Счёт получателя создан не с нулевым балансом'
+
+        transfer_amount = 0
+        response = api_manager.user_steps.transfer_account_invalid(
+            transfer_accounts.user, transfer_accounts.from_account, transfer_accounts.to_account, transfer_amount
+        )
+        assert response.error == (
+            "Amount must be greater than 0\nAmount must be between 500 and 10000"
+        ), 'Сервис не отклонил недопустимую сумму'
+        db_session.expire_all()
+
+        assert from_account_from_db.balance == transfer_accounts.deposit_amount, (
+            'Баланс отправителя изменился, хотя перевод отклонён'
+        )
+        assert to_account_from_db.balance == 0, 'Баланс получателя изменился, хотя перевод отклонён'
+
+        transaction_from_db = Transaction.get_last_transaction_by_account_id(
+            db_session, transfer_accounts.from_account.id
+        )
+        assert transaction_from_db is not None, 'Депозит из фикстуры не найден в БД'
+        assert transaction_from_db.transaction_type == "deposit", 'Перевод записан в БД, хотя был отклонён'

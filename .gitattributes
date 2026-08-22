@@ -1,0 +1,20 @@
+# Нормализация переносов строк.
+# В репозитории всегда хранится LF, на диск в Windows выкладывается CRLF.
+* text=auto eol=crlf
+
+# Файлы, которым CRLF противопоказан (исполняются в Linux/CI).
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Бинарные — не трогать.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.xlsx binary
+*.docx binary
