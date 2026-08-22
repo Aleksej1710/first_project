@@ -54,9 +54,12 @@ src/main/api/
 │   └── response_specs.py     ожидаемый статус-код
 ├── models/                   pydantic-модели запросов и ответов
 ├── generators/               генерация валидных тестовых данных
+│   ├── model_generator.py    модель целиком по аннотациям полей
+│   └── amount_range.py       границы сумм по операциям и случайное значение
 ├── fixtures/                 подготовка данных и уборка после теста
 │   ├── api_fixture.py        api_manager
 │   ├── db_fixture.py         db_session
+│   ├── fixture_models.py     модели результата фикстур вместо кортежей
 │   ├── object_fixture.py     реестр созданных объектов + удаление
 │   └── user_fixture.py       пользователи, счета, кредиты под конкретные кейсы
 ├── db/
