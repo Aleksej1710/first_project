@@ -7,6 +7,7 @@ from src.main.api.generators.amount_range import CREDIT_AMOUNT_RANGE
 from src.main.api.fixtures.fixture_models import UserWithAccount
 
 
+@pytest.mark.order(6)
 @pytest.mark.api
 class TestCreateCredit:
     def test_create_credit_valid(

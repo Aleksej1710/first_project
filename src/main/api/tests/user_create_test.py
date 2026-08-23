@@ -7,6 +7,7 @@ from src.main.api.models.create_user_request import CreateUserRequest
 
 
 
+@pytest.mark.order(2)
 @pytest.mark.api
 class TestCreateUser():
     @pytest.mark.parametrize(
@@ -46,4 +47,3 @@ class TestCreateUser():
         user_from_db = User.get_user_by_username(db_session, create_user_request.username)
 
         assert user_from_db is None, 'Пользователь создан, ошибка'
-

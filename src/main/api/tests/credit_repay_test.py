@@ -6,6 +6,7 @@ from src.main.api.db.crud.account_crud import AccountCrudDb as Account
 from src.main.api.fixtures.fixture_models import UserWithCredit
 
 
+@pytest.mark.order(7)
 @pytest.mark.api
 class TestRepayCredit:
     def test_repay_credit_valid(
