@@ -5,6 +5,7 @@ from src.main.api.db.crud.account_crud import AccountCrudDb as Account
 from src.main.api.models.create_user_request import CreateUserRequest
 
 
+@pytest.mark.order(3)
 @pytest.mark.api
 class TestCreateAccount:
     def test_create_account(self, db_session: Session, api_manager: ApiManager, create_user_request: CreateUserRequest):

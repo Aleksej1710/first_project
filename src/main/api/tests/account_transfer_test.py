@@ -7,6 +7,7 @@ from src.main.api.generators.amount_range import TRANSFER_AMOUNT_RANGE
 from src.main.api.fixtures.fixture_models import UserWithTwoAccounts
 
 
+@pytest.mark.order(5)
 @pytest.mark.api
 class TestTransferAccount:
     def test_transfer_account_valid(

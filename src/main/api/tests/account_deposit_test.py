@@ -7,6 +7,7 @@ from src.main.api.generators.amount_range import DEPOSIT_AMOUNT_RANGE
 from src.main.api.fixtures.fixture_models import UserWithAccount
 
 
+@pytest.mark.order(4)
 @pytest.mark.api
 class TestDepositAccount:
     def test_deposit_account_valid(

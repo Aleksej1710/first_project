@@ -3,6 +3,7 @@ import pytest
 from src.main.api.models.login_user_request import LoginUserRequest
 
 
+@pytest.mark.order(1)
 @pytest.mark.api
 class TestUserLogin:
     def test_login_admin(self, api_manager):
@@ -17,5 +18,4 @@ class TestUserLogin:
 
         assert create_user_request.username == response.user.username
         assert response.user.role == "ROLE_USER"
-
 

@@ -164,7 +164,7 @@ cp .env.example .env          # заполнить ADMIN_USERNAME / ADMIN_PASSWO
 # 3. прогон
 pytest src/main/api/tests -q                            # все тесты
 pytest -m api                                           # только помеченные маркером api
-pytest src/main/api/tests/t07_credit_repay_test.py -q   # один файл
+pytest src/main/api/tests/credit_repay_test.py -q       # один файл
 ```
 
 Отчёт Allure собирается в `allure-results` при каждом прогоне:
@@ -267,6 +267,6 @@ amount="сто"     → 400 {"error": "This value should be of type float."}
 
 ## Дальше в работе
 
-- негативные кейсы для логина и создания счёта (t01, t03)
+- негативные кейсы для логина и создания счёта
 - параметризация граничных значений сумм вместо одиночных проверок
 - запуск в CI с публикацией Allure-отчёта
